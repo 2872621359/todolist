@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/sync",
-      "destination": "/api/handler"
-    },
-    {
       "source": "/",
       "destination": "/index.html"
     }
