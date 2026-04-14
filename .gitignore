@@ -24,7 +24,7 @@ MANIFEST
 .env
 .env.local
 .env.*.local
-*.json
+todo_data.json
 node_modules/
 .DS_Store
 .vercel/
