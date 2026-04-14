@@ -78,17 +78,20 @@ def application(environ, start_response):
     if request.method == 'OPTIONS':
         return cors_headers(Response('', status=204))(environ, start_response)
 
-    # GET /api/sync —— 健康检查
-    if request.path == '/api/sync' and request.method == 'GET':
+    # GET —— 健康检查（Vercel 路由后 path 可能是 /、/api/sync 或 /handler 等）
+    if request.method == 'GET':
         info = {
             'ok': True,
             'kv_configured': bool(KV_URL and KV_TOKEN),
+            'kv_url_present': bool(KV_URL),
+            'kv_token_present': bool(KV_TOKEN),
+            'path_seen': request.path,
             'serverTime': int(time.time() * 1000),
         }
         resp = Response(json.dumps(info), status=200, mimetype='application/json')
         return cors_headers(resp)(environ, start_response)
 
-    if request.path == '/api/sync' and request.method == 'POST':
+    if request.method == 'POST':
         try:
             if not KV_URL or not KV_TOKEN:
                 resp = Response(
