@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>四象限待办</title>
+<script src="cloudbase.full.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -558,6 +559,9 @@ body>*{position:relative;z-index:1}
     z-index:200;border-left:none;
   }
   .cal-inner,.life-inner,.habit-inner,.goals-inner,.tips-inner{width:100%!important}
+  .panel-back{display:inline-flex}
+  .cal-mobile-top{display:flex!important;align-items:center;gap:10px;padding:8px 16px 0}
+  .cal-mobile-title{font-size:15px;font-weight:700;color:var(--grape)}
 
   /* -- Tips grid: single column -- */
   .tips-grid{grid-template-columns:1fr}
@@ -585,6 +589,12 @@ body>*{position:relative;z-index:1}
   .modal-body{padding:14px 20px}
   .modal-foot{padding:12px 20px 16px}
 }
+
+/* ===== Panel back button (mobile only) ===== */
+.panel-back{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:12px;border:2px solid var(--blush-light);background:var(--cloud);cursor:pointer;font-size:18px;color:var(--grape);flex-shrink:0;transition:all .2s;font-family:var(--font);font-weight:700;padding:0;line-height:1}
+.cal-mobile-top{display:none}
+.panel-back:hover{background:var(--pink-cloud);border-color:var(--pink-blush)}
+.panel-back:active{transform:scale(.92)}
 
 /* ===== Sync indicator ===== */
 .sync-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;flex-shrink:0;transition:all .3s;opacity:.5}
@@ -667,6 +677,7 @@ body>*{position:relative;z-index:1}
     <div class="tips-inner">
       <div class="tips-head">
         <div class="tips-head-top">
+          <button class="panel-back" onclick="toggleTipsPanel()" title="返回" aria-label="返回">‹</button>
           <div class="tips-title"><span class="tt-icon">💡</span>灵感便签</div>
           <div class="tips-head-actions">
             <button class="tips-shuffle-btn" onclick="highlightRandomTip()" title="随机翻牌">🎲</button>
@@ -686,6 +697,7 @@ body>*{position:relative;z-index:1}
     <div class="goals-inner">
       <div class="goals-head">
         <div class="goals-head-top">
+          <button class="panel-back" onclick="toggleGoalsPanel()" title="返回" aria-label="返回">‹</button>
           <div class="goals-title"><span class="gt-icon">⭐</span>宏观目标</div>
           <button class="goals-add-btn" onclick="openGoalModal()" title="添加目标">+</button>
         </div>
@@ -700,6 +712,7 @@ body>*{position:relative;z-index:1}
     <div class="habit-inner">
       <div class="habit-head">
         <div class="habit-head-top">
+          <button class="panel-back" onclick="toggleHabitPanel()" title="返回" aria-label="返回">‹</button>
           <div class="habit-title"><span class="ht-icon">✨</span>每日打卡</div>
           <button class="habit-add-btn" onclick="openHabitModal()" title="新建习惯">+</button>
         </div>
@@ -732,6 +745,7 @@ body>*{position:relative;z-index:1}
   <div class="life-panel" id="lifePanel">
     <div class="life-inner">
       <div class="life-head">
+        <button class="panel-back" onclick="toggleLifePanel()" title="返回" aria-label="返回">‹</button>
         <div class="life-title"><span class="lt-icon">🌸</span>生活日程</div>
         <button class="life-add-btn" onclick="openLifeModal()" title="添加">+</button>
       </div>
@@ -743,6 +757,10 @@ body>*{position:relative;z-index:1}
   <div class="cal-panel" id="calPanel">
     <div class="cal-inner">
       <div class="cal-head">
+        <div class="cal-mobile-top">
+          <button class="panel-back" onclick="toggleCalendar()" title="返回" aria-label="返回">‹</button>
+          <span class="cal-mobile-title">📅 月历</span>
+        </div>
         <div class="cal-nav">
           <button class="cal-nav-btn" onclick="calMove(-1)">‹</button>
           <span class="cal-month-label" id="calLabel"></span>
@@ -2008,24 +2026,43 @@ document.addEventListener('keydown',e=>{
   if(e.key==='t'&&!anyModal&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName))toggleTipsPanel()
 });
 
-// --- Sync Engine ---
+// --- CloudBase Sync Engine ---
+const CB_ENV='todo-9gazfyxef8e720b7';
+const CB_REGION='ap-shanghai';
+const CB_COLL='todo_data';
+const CB_DOC='main';
+
 let lastSyncAt=+(localStorage.getItem('quad_lastSync'))||0;
-const SYNC_URL=location.origin+'/api/sync';
 let syncTimer=null;
 let syncing=false;
+let cbApp=null,cbAuth=null,cbDb=null,cbReady=null;
+
+function cbInit(){
+  if(cbReady)return cbReady;
+  cbReady=(async()=>{
+    if(typeof cloudbase==='undefined')throw new Error('CloudBase SDK 未加载');
+    cbApp=cloudbase.init({env:CB_ENV,region:CB_REGION});
+    cbAuth=cbApp.auth({persistence:'local'});
+    cbDb=cbApp.database();
+    const loginState=await cbAuth.getLoginState();
+    if(!loginState){await cbAuth.anonymousAuthProvider().signIn()}
+  })();
+  return cbReady;
+}
 
 function scheduleSync(){
   clearTimeout(syncTimer);
   syncTimer=setTimeout(doSync,1500)
 }
 
-function setSyncStatus(state){
+let lastSyncError='';
+function setSyncStatus(state,err){
   const dot=$('syncDot');
   dot.className='sync-dot '+state;
-  if(state==='syncing')dot.textContent='\u21BB';
-  else if(state==='synced'){dot.textContent='\u2714';setTimeout(()=>{if(dot.classList.contains('synced'))dot.className='sync-dot';dot.textContent='\u2728'},2500)}
-  else if(state==='error')dot.textContent='\u2717';
-  else dot.textContent='\u2728'
+  if(state==='syncing'){dot.textContent='\u21BB';dot.title='同步中…'}
+  else if(state==='synced'){dot.textContent='\u2714';dot.title='已同步 '+new Date().toLocaleTimeString();setTimeout(()=>{if(dot.classList.contains('synced')){dot.className='sync-dot';dot.textContent='\u2728';dot.title='点击同步'}},2500)}
+  else if(state==='error'){dot.textContent='\u2717';lastSyncError=err||'未知错误';dot.title='同步失败：'+lastSyncError+'\n点击重试'}
+  else{dot.textContent='\u2728';dot.title='点击同步'}
 }
 
 async function doSync(){
@@ -2033,55 +2070,84 @@ async function doSync(){
   syncing=true;
   setSyncStatus('syncing');
   try{
-    const collections={tasks,lifeEvents,habits,goals,tips};
-    const changes={};
-    for(const[k,arr]of Object.entries(collections)){
-      changes[k]=arr.filter(it=>it.updatedAt&&it.updatedAt>lastSyncAt)
-    }
-    const resp=await fetch(SYNC_URL,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lastSyncAt,changes})
-    });
-    if(!resp.ok)throw new Error('sync failed: '+resp.status);
-    const data=await resp.json();
-
-    // Merge server changes into local
-    const colMap={tasks,lifeEvents,habits,goals,tips};
-    const saveMap={tasks:save,lifeEvents:saveLife,habits:saveHabits,goals:saveGoals,tips:saveTips};
-    let needRender=false;
-    for(const[k,serverItems]of Object.entries(data.changes||{})){
-      if(!serverItems||!serverItems.length)continue;
-      const local=colMap[k];
-      const idx=new Map(local.map((it,i)=>[it.id,i]));
-      for(const si of serverItems){
-        const li=idx.get(si.id);
-        if(li!==undefined){
-          if(si.updatedAt>(local[li].updatedAt||0)){local[li]=si;needRender=true}
-        }else{
-          local.push(si);needRender=true
-        }
+    console.log('[sync] 开始 —— env:',CB_ENV,'region:',CB_REGION,'collection:',CB_COLL,'doc:',CB_DOC);
+    await cbInit();
+    const loginState=await cbAuth.getLoginState();
+    const curUser=cbAuth&&cbAuth.currentUser;
+    console.log('[sync] 当前用户 uid:',curUser&&curUser.uid,'登录类型:',curUser&&curUser.loginType,'loginState:',loginState);
+    // 1. 读服务端文档
+    let serverPayload={tasks:[],lifeEvents:[],habits:[],goals:[],tips:[]};
+    let docExists=false;
+    try{
+      const res=await cbDb.collection(CB_COLL).doc(CB_DOC).get();
+      console.log('[sync] 读取服务端文档 OK，命中数据条数:',res.data&&res.data.length);
+      if(res.data&&res.data.length>0){
+        docExists=true;
+        serverPayload=res.data[0].payload||serverPayload;
       }
-      // Save locally without re-triggering sync
-      localStorage.setItem(
-        k==='tasks'?SK:k==='lifeEvents'?LK:k==='habits'?HK:k==='goals'?GK:TK,
-        JSON.stringify(local)
-      )
+    }catch(readErr){
+      console.error('[sync] ❌ 读取失败（通常是权限/集合未创建）:',readErr);
+      // 若不是"文档不存在"，则抛出让外层显示错误
+      const msg=(readErr&&(readErr.message||readErr.errMsg)||'').toLowerCase();
+      if(msg.includes('permission')||msg.includes('denied')||msg.includes('权限')||msg.includes('unauthor')){
+        throw new Error('权限被拒绝：'+(readErr.message||readErr.errMsg||readErr));
+      }
+      // 集合或文档不存在是正常初始状态，吞掉继续
     }
 
-    lastSyncAt=data.serverTime||Date.now();
+    // 2. 按 item.id + updatedAt 合并（last-write-wins）
+    const collections={tasks,lifeEvents,habits,goals,tips};
+    const keyMap={tasks:SK,lifeEvents:LK,habits:HK,goals:GK,tips:TK};
+    let localChanged=false,serverChanged=false;
+    for(const k of Object.keys(collections)){
+      const local=collections[k];
+      const server=serverPayload[k]||[];
+      const idx=new Map(local.map((it,i)=>[it.id,i]));
+      for(const si of server){
+        const li=idx.get(si.id);
+        if(li===undefined){local.push(si);idx.set(si.id,local.length-1);localChanged=true}
+        else if((si.updatedAt||0)>(local[li].updatedAt||0)){local[li]=si;localChanged=true}
+      }
+      const serverIdx=new Map(server.map(it=>[it.id,it]));
+      for(const li of local){
+        const si=serverIdx.get(li.id);
+        if(!si||(li.updatedAt||0)>(si.updatedAt||0)){serverChanged=true;break}
+      }
+    }
+
+    // 3. 本地有更新 → 写回服务端（用 set 保证创建或覆盖）
+    if(serverChanged){
+      const payload={tasks,lifeEvents,habits,goals,tips};
+      try{
+        await cbDb.collection(CB_COLL).doc(CB_DOC).set({payload,updatedAt:Date.now()});
+        console.log('[sync] 写入服务端 OK');
+      }catch(writeErr){
+        console.error('[sync] ❌ 写入失败:',writeErr);
+        throw new Error('写入被拒绝：'+(writeErr.message||writeErr.errMsg||writeErr));
+      }
+    }else{
+      console.log('[sync] 本地无更新，跳过写入');
+    }
+
+    // 4. 持久化本地 + 刷新 UI
+    if(localChanged){
+      for(const k of Object.keys(collections)){
+        localStorage.setItem(keyMap[k],JSON.stringify(collections[k]))
+      }
+      render();
+    }
+    lastSyncAt=Date.now();
     localStorage.setItem('quad_lastSync',lastSyncAt);
-    if(needRender)render();
     setSyncStatus('synced')
   }catch(e){
-    console.warn('Sync error:',e);
-    setSyncStatus('error')
+    console.error('[sync] ❌ 同步失败:',e);
+    setSyncStatus('error',(e&&(e.message||e.errMsg))||String(e))
   }finally{
     syncing=false
   }
 }
 
-// Initial sync on load + periodic poll
+// 页面加载首次同步 + 每 30s 轮询
 setTimeout(doSync,800);
 setInterval(()=>{if(!syncing)doSync()},30000);
 

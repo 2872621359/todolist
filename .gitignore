@@ -28,5 +28,6 @@ todo_data.json
 node_modules/
 .DS_Store
 .vercel/
+.cloudbase/
 todo_data.json
 *.tmp
